@@ -11,22 +11,22 @@ export const envOrThrow = (key: string) => {
     }
 
     return process.env[key];
-}
+};
 
 type DBConfig = {
     db: {
-        url: string,
-        migrationConfig: MigrationConfig,
-    },
+        url: string;
+        migrationConfig: MigrationConfig;
+    };
 };
 
 const migrationConfig: MigrationConfig = {
-    migrationsFolder: "./src/db/migrations",
+    migrationsFolder: "./src/db/migrations"
 };
 
 export const config: DBConfig = {
     db: {
         url: envOrThrow("DB_URL"),
-        migrationConfig: migrationConfig,
-    },
+        migrationConfig: migrationConfig
+    }
 };
