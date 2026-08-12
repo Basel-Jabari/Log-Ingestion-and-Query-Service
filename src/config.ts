@@ -13,6 +13,13 @@ export const envOrThrow = (key: string) => {
     return process.env[key];
 };
 
+type ServerConfig = {
+    server: {
+        port: number;
+        bodyLimit: string;
+    };
+};
+
 type DBConfig = {
     db: {
         url: string;
@@ -24,7 +31,12 @@ const migrationConfig: MigrationConfig = {
     migrationsFolder: "./src/db/migrations"
 };
 
-export const config: DBConfig = {
+export const config: DBConfig & ServerConfig = {
+    server: {
+        port: Number(process.env["PORT"] ?? 8080),
+        bodyLimit: process.env["BODY_LIMIT"] ?? "16mb"
+    },
+
     db: {
         url: envOrThrow("DB_URL"),
         migrationConfig: migrationConfig
