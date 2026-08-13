@@ -1,5 +1,6 @@
 import express from "express";
 import { config } from "./config.js";
+import { endpoints } from "./endpoints/endpoints.js";
 
 export const app = express();
 
@@ -11,3 +12,4 @@ app.use(
         limit: config.server.bodyLimit
     })
 );
+app.use(endpoints);
