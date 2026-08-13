@@ -8,26 +8,26 @@ import postgres from "postgres";
 import { config } from "./config.js";
 import { app } from "./app.js";
 
-// Starting the server
+// Start the application
 const main = async () => {
     const migrationClient = postgres(config.db.url, {
         max: 1
     });
 
     try {
-        // Auto-Migration
+        // Apply pending database migrations
         await migrate(drizzle(migrationClient), config.db.migrationConfig);
         console.log("Database migrations completed successfully.");
     } finally {
-        // End the database connection
+        // Close the dedicated migration connection
         await migrationClient.end();
     }
 
-    // Starting the server
+    // Start the HTTP server
     const server = app.listen(config.server.port);
     await once(server, "listening");
 
-    // Set isReady = true for GET /health endpoint
+    // Report readiness only after the server is listening
     config.server.isReady = true;
     console.log(`Server is running at http://localhost:${config.server.port}.`);
 };

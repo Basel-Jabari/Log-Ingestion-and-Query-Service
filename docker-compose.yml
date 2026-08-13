@@ -4,9 +4,7 @@
 services:
     app:
         build: .
-        # Node runs as process 1, and process 1 ignores signals it does not
-        # handle, so docker compose down would wait 10s and then kill it
-        # This adds a tiny process that passes the signal to Node
+        # Forward termination signals and reap orphaned child processes
         init: true
         ports:
             - "8080:8080"
@@ -16,12 +14,11 @@ services:
             DB_URL: postgres://postgres:liqs@postgres:5432/liqs
         depends_on:
             postgres:
-                # Waits for the healthcheck below
-                # The app never starts before the database can accept connections
+                # Start the app only after PostgreSQL can accept connections
                 condition: service_healthy
         deploy:
             resources:
-                # The limits the project will be graded with
+                # Resource limits used during grading
                 limits:
                     cpus: "0.5"
                     memory: 256M
@@ -31,11 +28,10 @@ services:
         environment:
             POSTGRES_USER: postgres
             POSTGRES_PASSWORD: liqs
-            # The database the app uses
-            # The tests use liqs_test that created by the file in ./initdb
+            # The app uses liqs; the init script creates liqs_test for tests
             POSTGRES_DB: liqs
         ports:
-            # Host port is 5433 so this never touches a Postgres (5432)
+            # Use host port 5433 to avoid a local PostgreSQL instance on 5432
             - "5433:5432"
         volumes:
             - ./initdb:/docker-entrypoint-initdb.d
@@ -46,7 +42,7 @@ services:
             retries: 15
         deploy:
             resources:
-                # The limits the project will be graded with
+                # Resource limits used during grading
                 limits:
                     cpus: "1.0"
                     memory: 1G

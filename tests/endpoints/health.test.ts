@@ -4,7 +4,7 @@ import { startTestServer } from "../server.js";
 
 const { baseURL, close } = await startTestServer();
 
-// Stop the server when this file is done
+// Stop this test file's server after its tests finish
 afterAll(close);
 
 describe("GET /health", () => {
