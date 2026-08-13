@@ -29,7 +29,7 @@ const main = async () => {
     // Starting the server
     const server = app.listen(config.server.port);
     await once(server, "listening");
-  
+
     // Set isReady = true for GET /health endpoint
     config.server.isReady = true;
     console.log(`Server is running at http://localhost:${config.server.port}.`);
