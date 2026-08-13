@@ -8,9 +8,6 @@ import postgres from "postgres";
 import { config } from "./config.js";
 import { app } from "./app.js";
 
-// Middlewares
-import { middlewareErrorHandler } from "./middlewares/error_handler.js";
-
 // Starting the server
 const main = async () => {
     const migrationClient = postgres(config.db.url, {
@@ -36,5 +33,3 @@ const main = async () => {
 };
 
 await main();
-
-app.use(middlewareErrorHandler);
