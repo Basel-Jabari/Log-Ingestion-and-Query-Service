@@ -1,5 +1,12 @@
+// Libraries
 import express from "express";
+
+// Files
 import { config } from "./config.js";
+import { endpoints } from "./endpoints/endpoints.js";
+
+// Middlewares
+import { middlewareErrorHandler } from "./middlewares/error_handler.js";
 
 export const app = express();
 
@@ -11,3 +18,5 @@ app.use(
         limit: config.server.bodyLimit
     })
 );
+app.use(endpoints);
+app.use(middlewareErrorHandler);
