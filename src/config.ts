@@ -17,6 +17,7 @@ type ServerConfig = {
     server: {
         port: number;
         bodyLimit: string;
+        isReady: boolean;
     };
 };
 
@@ -34,7 +35,8 @@ const migrationConfig: MigrationConfig = {
 export const config: DBConfig & ServerConfig = {
     server: {
         port: Number(process.env["PORT"] ?? 8080),
-        bodyLimit: process.env["BODY_LIMIT"] ?? "16mb"
+        bodyLimit: process.env["BODY_LIMIT"] ?? "16mb",
+        isReady: false
     },
 
     db: {
