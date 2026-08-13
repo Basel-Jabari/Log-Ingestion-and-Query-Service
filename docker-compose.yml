@@ -1,20 +1,52 @@
-# Database used by the tests only.
-
-# Start it with:  npm run up
-# Stop it with:  docker compose down -v
-
-# Host port is 5433 (not 5432) so this never touches the real database
+# Start everything with: docker compose up
+# Start only the test DB: npm run up
+# Stop and delete data: docker compose down -v
 services:
+    app:
+        build: .
+        # Node runs as process 1, and process 1 ignores signals it does not
+        # handle, so docker compose down would wait 10s and then kill it
+        # This adds a tiny process that passes the signal to Node
+        init: true
+        ports:
+            - "8080:8080"
+        environment:
+            # Inside the compose network the database is reachable by the
+            # service name "postgres" on its own port 5432, not on 5433
+            DB_URL: postgres://postgres:liqs@postgres:5432/liqs
+        depends_on:
+            postgres:
+                # Waits for the healthcheck below
+                # The app never starts before the database can accept connections
+                condition: service_healthy
+        deploy:
+            resources:
+                # The limits the project will be graded with
+                limits:
+                    cpus: "0.5"
+                    memory: 256M
+
     postgres:
         image: postgres:17
         environment:
             POSTGRES_USER: postgres
             POSTGRES_PASSWORD: liqs
-            POSTGRES_DB: liqs_test
+            # The database the app uses
+            # The tests use liqs_test that created by the file in ./initdb
+            POSTGRES_DB: liqs
         ports:
+            # Host port is 5433 so this never touches a Postgres (5432)
             - "5433:5432"
+        volumes:
+            - ./initdb:/docker-entrypoint-initdb.d
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres -d liqs_test"]
+            test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d liqs"]
             interval: 2s
             timeout: 5s
             retries: 15
+        deploy:
+            resources:
+                # The limits the project will be graded with
+                limits:
+                    cpus: "1.0"
+                    memory: 1G
