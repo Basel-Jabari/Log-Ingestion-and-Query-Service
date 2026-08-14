@@ -25,5 +25,5 @@ export const logs = pgTable("logs", {
 
     message: text("message").notNull(),
 
-    attributes: jsonb("attributes").notNull().$type<LogAttributes>().default({})
+    attributes: jsonb("attributes").$type<LogAttributes>().default({})
 });
