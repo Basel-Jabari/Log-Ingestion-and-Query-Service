@@ -19,7 +19,22 @@ app.use(
         limit: config.server.bodyLimit
     })
 );
-app.use(swaggerUi.serve);
-app.get("/", swaggerUi.setup(openApiDocument));
+
+const swaggerPaths = ["/docs", "/swagger"];
+
+// The Swagger page asks for its files with relative paths, like ./swagger-ui.css
+// The browser resolves them correctly only when the address ends with a slash
+// So /docs is redirected to /docs/
+app.use(swaggerPaths, (req, res, next) => {
+    const path = req.originalUrl.split("?")[0]!;
+
+    if (req.path === "/" && !path.endsWith("/")) {
+        res.redirect(`${path}/`);
+        return;
+    }
+
+    next();
+});
+app.use(swaggerPaths, swaggerUi.serve, swaggerUi.setup(openApiDocument));
 app.use(endpoints);
 app.use(middlewareErrorHandler);
