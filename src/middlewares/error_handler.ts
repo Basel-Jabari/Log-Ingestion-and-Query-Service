@@ -2,20 +2,22 @@ import { HTTPError } from "../errors.js";
 import { ErrorMiddleWare } from "./middleware.js";
 
 export const middlewareErrorHandler: ErrorMiddleWare = (err, _req, res, _next) => {
-    let errorJSON = {};
+    let errorJSON = {
+        error: "Something went wrong on our side!"
+    };
     if (err instanceof Error) {
         errorJSON = {
             error: err.message
         };
-    } else {
-        errorJSON = {
-            error: "Something went wrong on our side!"
-        };
     }
 
-    if (err instanceof HTTPError) {
-        res.status(err.status).json(errorJSON);
-    } else {
-        res.status(500).json(errorJSON);
+    let status = 500;
+    const errWithStatus = err as {
+        status?: unknown;
+    };
+    if (typeof errWithStatus.status === "number") {
+        status = errWithStatus.status;
     }
+
+    res.status(status).json(errorJSON);
 };
