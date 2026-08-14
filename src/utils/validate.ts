@@ -46,6 +46,14 @@ const parseTimestamp = (value: unknown): Date => {
         throw new BadRequestError(`invalid timestamp: ${describeValue(value)}`);
     }
 
+    // We subtract 1 because in Date:
+    // Months start from 0
+    const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+    const calendar = new Date(Date.UTC(year, month - 1, day));
+    if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() + 1 !== month || calendar.getUTCDate() !== day) {
+        throw new BadRequestError(`invalid timestamp: ${describeValue(value)}`);
+    }
+
     if (timestamp.getTime() > Date.now() + FIVE_MINUTES) {
         throw new BadRequestError(`timestamp is more than five minutes in the future: ${describeValue(value)}`);
     }
@@ -139,7 +147,7 @@ export const validateLogBatch = (body: unknown): ValidatedLogBatch => {
     const valid: NewLog[] = [];
     const rejected: RejectedLog[] = [];
 
-    for (let [entry, index] of entries) {
+    entries.forEach((entry, index) => {
         try {
             valid.push(validateLog(entry));
         } catch (error) {
@@ -152,7 +160,7 @@ export const validateLogBatch = (body: unknown): ValidatedLogBatch => {
                 reason: error.message
             });
         }
-    }
+    });
 
     return {
         valid: valid,
