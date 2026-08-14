@@ -1,8 +1,26 @@
+# Dependencies and build output — installed / built inside the image
 node_modules
 dist
+
+# Local secrets and editor state
 .env
+.vscode
+
+# Git and CI — not needed to build or run the app
 .git
+.gitattributes
+.gitignore
 .github
 .husky
-.vscode
+
+# Formatting / tooling configs — not used by tsc or node
+.nvmrc
+.prettierignore
+.prettierrc.json
+drizzle.config.ts
+vitest.config.ts
+
+# Tests and local compose helpers — never go into the image
 tests
+initdb
+docker-compose.yml
