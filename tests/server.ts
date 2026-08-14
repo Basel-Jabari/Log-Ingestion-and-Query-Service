@@ -3,8 +3,8 @@ import type { AddressInfo } from "node:net";
 import { app } from "../src/app.js";
 
 export const startTestServer = async () => {
-    // Port 0 asks the operating system to select an available port.
-    // Bind to loopback so the test server is accessible only locally.
+    // Port 0 asks the operating system to select an available port
+    // Bind to loopback so the test server is accessible only locally
     const server = app.listen(0, "127.0.0.1");
     await once(server, "listening");
 
