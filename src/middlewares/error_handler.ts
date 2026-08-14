@@ -1,7 +1,7 @@
 import { HTTPError } from "../errors.js";
 import { ErrorMiddleWare } from "./middleware.js";
 
-export const middlewareErrorHandler: ErrorMiddleWare = (err, req, res, next) => {
+export const middlewareErrorHandler: ErrorMiddleWare = (err, _req, res, _next) => {
     let errorJSON = {};
     if (err instanceof Error) {
         errorJSON = {
