@@ -82,6 +82,56 @@ export const openApiDocument: OpenAPIV3_1.Document = {
                     }
                 }
             },
+            LogRecord: {
+                type: "object",
+                additionalProperties: false,
+                required: ["id", "timestamp", "level", "service", "message", "attributes"],
+                properties: {
+                    id: {
+                        type: "string",
+                        description: "Unique identifier of the stored entry."
+                    },
+                    timestamp: {
+                        type: "string",
+                        format: "date-time"
+                    },
+                    level: {
+                        type: "string",
+                        enum: ["debug", "info", "warn", "error"]
+                    },
+                    service: {
+                        type: "string"
+                    },
+                    message: {
+                        type: "string"
+                    },
+                    attributes: {
+                        type: "object",
+                        additionalProperties: {
+                            oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }]
+                        }
+                    }
+                }
+            },
+            LogPage: {
+                type: "object",
+                additionalProperties: false,
+                required: ["logs", "next_cursor"],
+                properties: {
+                    logs: {
+                        type: "array",
+                        items: {
+                            $ref: "#/components/schemas/LogRecord"
+                        }
+                    },
+                    next_cursor: {
+                        type: ["string", "null"],
+                        description:
+                            "Pass this back as the cursor parameter to read the next page. " +
+                            "Null when no further results are available."
+                    }
+                }
+            },
             Error: {
                 type: "object",
                 additionalProperties: false,
@@ -182,6 +232,134 @@ export const openApiDocument: OpenAPIV3_1.Document = {
                                             reason: "missing message"
                                         }
                                     ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            get: {
+                operationId: "queryLogs",
+                summary: "Query stored logs",
+                description:
+                    "Every parameter is optional and they may be freely combined. Results are sorted by timestamp " +
+                    "descending, with the id breaking ties so the order stays stable across pages.",
+                tags: ["Logs"],
+                parameters: [
+                    {
+                        name: "service",
+                        in: "query",
+                        description: "Exact service name match.",
+                        schema: {
+                            type: "string"
+                        },
+                        example: "checkout"
+                    },
+                    {
+                        name: "level",
+                        in: "query",
+                        description: "Exact level match.",
+                        schema: {
+                            type: "string",
+                            enum: ["debug", "info", "warn", "error"]
+                        }
+                    },
+                    {
+                        name: "since",
+                        in: "query",
+                        description: "Inclusive start of the time range.",
+                        schema: {
+                            type: "string",
+                            format: "date-time"
+                        },
+                        example: "2026-07-20T14:00:00Z"
+                    },
+                    {
+                        name: "until",
+                        in: "query",
+                        description: "Exclusive end of the time range.",
+                        schema: {
+                            type: "string",
+                            format: "date-time"
+                        },
+                        example: "2026-07-20T15:00:00Z"
+                    },
+                    {
+                        name: "attr.<key>",
+                        in: "query",
+                        description:
+                            "Attribute equality, compared as strings, written as attr.user_id=42. " +
+                            "Several attribute filters may be combined, and a stored number matches its text form.",
+                        schema: {
+                            type: "string"
+                        }
+                    },
+                    {
+                        name: "q",
+                        in: "query",
+                        description: "Case-insensitive substring match on the message.",
+                        schema: {
+                            type: "string"
+                        },
+                        example: "declined"
+                    },
+                    {
+                        name: "limit",
+                        in: "query",
+                        description: "Maximum number of results.",
+                        schema: {
+                            type: "integer",
+                            minimum: 1,
+                            maximum: 1000,
+                            default: 100
+                        }
+                    },
+                    {
+                        name: "cursor",
+                        in: "query",
+                        description: "Opaque cursor returned as next_cursor by a previous response.",
+                        schema: {
+                            type: "string"
+                        }
+                    }
+                ],
+                responses: {
+                    "200": {
+                        description: "A page of logs, oldest results reachable through next_cursor.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    $ref: "#/components/schemas/LogPage"
+                                },
+                                example: {
+                                    logs: [
+                                        {
+                                            id: "12345",
+                                            timestamp: "2026-07-20T14:32:01.123Z",
+                                            level: "error",
+                                            service: "checkout",
+                                            message: "payment declined",
+                                            attributes: {
+                                                user_id: "42"
+                                            }
+                                        }
+                                    ],
+                                    next_cursor: "eyJ0IjoiMjAyNi0wNy0yMFQxNDozMjowMS4xMjNaIiwiaSI6IjEyMzQ1In0"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        description:
+                            "A parameter was invalid, such as a malformed timestamp or cursor, an unsupported " +
+                            "level, until earlier than since, or a limit outside 1 to 1000.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    $ref: "#/components/schemas/Error"
+                                },
+                                example: {
+                                    error: "limit must be an integer between 1 and 1000: '5000'"
                                 }
                             }
                         }

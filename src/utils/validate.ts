@@ -1,5 +1,6 @@
 import { logLevel, LogAttributes, LogLevel, NewLog } from "../db/schema.js";
 import { BadRequestError } from "../errors.js";
+import { decodeCursor, type Cursor } from "./cursor.js";
 
 const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const FIVE_MINUTES = 5 * 60 * 1000;
@@ -32,7 +33,7 @@ const isLogLevel = (value: unknown): value is LogLevel => {
     return typeof value === "string" && (logLevel.enumValues as string[]).includes(value);
 };
 
-const parseTimestamp = (value: unknown): Date => {
+const parseTimestamp = (value: unknown, fiveMinutes: boolean): Date => {
     if (value === undefined) {
         throw new BadRequestError("missing timestamp");
     }
@@ -54,7 +55,7 @@ const parseTimestamp = (value: unknown): Date => {
         throw new BadRequestError(`invalid timestamp: ${describeValue(value)}`);
     }
 
-    if (timestamp.getTime() > Date.now() + FIVE_MINUTES) {
+    if (fiveMinutes && timestamp.getTime() > Date.now() + FIVE_MINUTES) {
         throw new BadRequestError(`timestamp is more than five minutes in the future: ${describeValue(value)}`);
     }
 
@@ -73,7 +74,7 @@ const parseLevel = (value: unknown): LogLevel => {
     return value;
 };
 
-const parseText = (value: unknown, field: "service" | "message"): string => {
+const parseText = (value: unknown, field: "service" | "message" | "q"): string => {
     if (value === undefined) {
         throw new BadRequestError(`missing ${field}`);
     }
@@ -106,13 +107,59 @@ const parseAttributes = (value: unknown): LogAttributes => {
     return attributes;
 };
 
+const parseLimit = (value: unknown): number => {
+    if (typeof value !== "string" || !/^\d+$/.test(value)) {
+        throw new BadRequestError(`invalid limit: ${describeValue(value)}`);
+    }
+
+    const limit = Number(value);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+        throw new BadRequestError(`limit must be an integer between 1 and 1000: ${describeValue(value)}`);
+    }
+
+    return limit;
+};
+
+// Filters arrive flat, as attr.user_id=42, never as a nested object
+// Their values always come from the URL, so they are always strings
+const parseAttr = (query: Record<string, unknown>): AttributeFilters => {
+    const attributes: AttributeFilters = {};
+    for (const [key, value] of Object.entries(query)) {
+        if (!key.startsWith("attr.")) {
+            continue;
+        }
+
+        const attrKey = key.slice("attr.".length);
+        if (attrKey === "") {
+            throw new BadRequestError("invalid attr key: empty key");
+        }
+
+        // A repeated filter, like attr.a=1&attr.a=2, arrives as an array
+        if (typeof value !== "string") {
+            throw new BadRequestError(`invalid attr value for '${attrKey}': ${describeValue(value)}`);
+        }
+
+        attributes[attrKey] = value;
+    }
+
+    return attributes;
+};
+
+const parseCursor = (value: unknown): Cursor => {
+    if (typeof value !== "string") {
+        throw new BadRequestError(`invalid cursor: ${describeValue(value)}`);
+    }
+
+    return decodeCursor(value);
+};
+
 export const validateLog = (log: unknown): NewLog => {
     if (!isPlainObject(log)) {
         throw new BadRequestError(`log entry must be an object, received ${describeValue(log)}`);
     }
 
     return {
-        timestamp: parseTimestamp(log["timestamp"]),
+        timestamp: parseTimestamp(log["timestamp"], true),
         level: parseLevel(log["level"]),
         service: parseText(log["service"], "service"),
         message: parseText(log["message"], "message"),
@@ -165,5 +212,51 @@ export const validateLogBatch = (body: unknown): ValidatedLogBatch => {
     return {
         valid: valid,
         rejected: rejected
+    };
+};
+
+// An attribute filter is compared as text, so a number in the URL stays a string here
+export type AttributeFilters = Record<string, string>;
+
+export type QueryParameters = {
+    service?: string;
+    level?: LogLevel;
+    since?: Date;
+    until?: Date;
+    attributes: AttributeFilters;
+    subMessage?: string;
+    limit: number;
+    cursor?: Cursor;
+};
+
+const DEFAULT_LIMIT = 100;
+
+export const validateQueryParameters = (query: unknown): QueryParameters => {
+    const parameters = isPlainObject(query) ? query : {};
+
+    const service = parameters["service"] ? parseText(parameters["service"], "service") : undefined;
+    const level = parameters["level"] ? parseLevel(parameters["level"]) : undefined;
+    const since = parameters["since"] ? parseTimestamp(parameters["since"], false) : undefined;
+    const until = parameters["until"] ? parseTimestamp(parameters["until"], false) : undefined;
+    const attributes = parseAttr(parameters);
+    const subMessage = parameters["q"] ? parseText(parameters["q"], "q") : undefined;
+    const limit = parameters["limit"] ? parseLimit(parameters["limit"]) : DEFAULT_LIMIT;
+    const cursor = parameters["cursor"] ? parseCursor(parameters["cursor"]) : undefined;
+
+    if (since && until) {
+        if (since.getTime() > until.getTime()) {
+            throw new BadRequestError("invalid time range (since > until)");
+        }
+    }
+
+    return {
+        service: service,
+        level: level,
+        since: since,
+        until: until,
+        attributes: attributes,
+        subMessage: subMessage,
+        limit: limit,
+        cursor: cursor
     };
 };

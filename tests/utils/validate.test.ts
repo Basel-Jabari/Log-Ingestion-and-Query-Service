@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BadRequestError } from "../../src/errors.js";
-import { validateLog, validateLogBatch } from "../../src/utils/validate.js";
+import { encodeCursor } from "../../src/utils/cursor.js";
+import { validateLog, validateLogBatch, validateQueryParameters } from "../../src/utils/validate.js";
 
 const validEntry = () => ({
     timestamp: "2006-03-29T14:32:01.123Z",
@@ -177,5 +178,123 @@ describe("validateLogBatch", () => {
         expect(() => validateLogBatch({})).toThrow("'logs' must be an array, received undefined");
         expect(() => validateLogBatch({ logs: validEntry() })).toThrow("'logs' must be an array, received object");
         expect(() => validateLogBatch({ logs: [] })).toThrow("'logs' must contain at least one entry");
+    });
+});
+
+describe("validateQueryParameters", () => {
+    it("Returns defaults when the query is empty or not an object", () => {
+        expect(validateQueryParameters({})).toEqual({
+            service: undefined,
+            level: undefined,
+            since: undefined,
+            until: undefined,
+            attributes: {},
+            subMessage: undefined,
+            limit: 100,
+            cursor: undefined
+        });
+        expect(validateQueryParameters(undefined).limit).toBe(100);
+        expect(validateQueryParameters(null).attributes).toEqual({});
+    });
+
+    it("Parses every supported filter", () => {
+        const cursor = encodeCursor({
+            timestamp: new Date("2026-07-20T14:02:00.000Z"),
+            id: 39n
+        });
+
+        expect(
+            validateQueryParameters({
+                service: "checkout",
+                level: "error",
+                since: "2026-07-20T14:00:00Z",
+                until: "2026-07-20T15:00:00Z",
+                "attr.user_id": "42",
+                "attr.retries": "3",
+                q: "declined",
+                limit: "50",
+                cursor: cursor
+            })
+        ).toEqual({
+            service: "checkout",
+            level: "error",
+            since: new Date("2026-07-20T14:00:00Z"),
+            until: new Date("2026-07-20T15:00:00Z"),
+            attributes: {
+                user_id: "42",
+                retries: "3"
+            },
+            subMessage: "declined",
+            limit: 50,
+            cursor: {
+                timestamp: new Date("2026-07-20T14:02:00.000Z"),
+                id: 39n
+            }
+        });
+    });
+
+    it("Ignores unknown query keys", () => {
+        expect(validateQueryParameters({ unknown: "value", service: "auth" }).service).toBe("auth");
+    });
+
+    it("Reads attr.<key> as flat string filters", () => {
+        expect(
+            validateQueryParameters({
+                "attr.user_id": "42",
+                service: "checkout"
+            }).attributes
+        ).toEqual({
+            user_id: "42"
+        });
+    });
+
+    it("Rejects an empty attr. key", () => {
+        expect(() => validateQueryParameters({ "attr.": "42" })).toThrow("invalid attr key: empty key");
+    });
+
+    it("Rejects a repeated attr filter that arrives as an array", () => {
+        expect(() =>
+            validateQueryParameters({
+                "attr.user_id": ["42", "7"]
+            })
+        ).toThrow("invalid attr value for 'user_id': array");
+    });
+
+    it("Does not apply the five-minute rule to since and until", () => {
+        const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+        expect(validateQueryParameters({ since: future }).since).toEqual(new Date(future));
+    });
+
+    it("Rejects until earlier than since", () => {
+        expect(() =>
+            validateQueryParameters({
+                since: "2026-07-20T15:00:00Z",
+                until: "2026-07-20T14:00:00Z"
+            })
+        ).toThrow("invalid time range (since > until)");
+    });
+
+    it("Rejects an unsupported level", () => {
+        expect(() => validateQueryParameters({ level: "critical" })).toThrow("invalid level: 'critical'");
+    });
+
+    it("Rejects a limit outside 1 to 1000", () => {
+        expect(() => validateQueryParameters({ limit: "0" })).toThrow(
+            "limit must be an integer between 1 and 1000: '0'"
+        );
+        expect(() => validateQueryParameters({ limit: "1001" })).toThrow(
+            "limit must be an integer between 1 and 1000: '1001'"
+        );
+        expect(() => validateQueryParameters({ limit: "ten" })).toThrow("invalid limit: 'ten'");
+    });
+
+    it("Rejects a malformed cursor", () => {
+        expect(() => validateQueryParameters({ cursor: "not-a-cursor" })).toThrow(BadRequestError);
+        expect(() => validateQueryParameters({ cursor: ["a", "b"] })).toThrow("invalid cursor: array");
+    });
+
+    it("Rejects an empty q", () => {
+        expect(() => validateQueryParameters({ q: "   " })).toThrow("invalid q: '   '");
     });
 });
