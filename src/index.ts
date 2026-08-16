@@ -7,6 +7,20 @@ import postgres from "postgres";
 // Files
 import { config } from "./config.js";
 import { app } from "./app.js";
+import { pgClient } from "./db/db.js";
+import { flushPendingLogs } from "./ingest/writer.js";
+
+const shutdown = async (server: ReturnType<typeof app.listen>) => {
+    config.server.isReady = false;
+
+    // Stop accepting new connections, but let the running requests finish
+    server.close();
+
+    await flushPendingLogs();
+    await pgClient.end();
+
+    process.exit(0);
+};
 
 // Start the application
 const main = async () => {
@@ -30,6 +44,13 @@ const main = async () => {
     // Report readiness only after the server is listening
     config.server.isReady = true;
     console.log(`Server is running at http://localhost:${config.server.port}.`);
+
+    // SIGTERM comes from "docker stop", SIGINT comes from Ctrl+C in a terminal
+    for (const signal of ["SIGTERM", "SIGINT"] as const) {
+        process.on(signal, () => {
+            void shutdown(server);
+        });
+    }
 };
 
 await main();

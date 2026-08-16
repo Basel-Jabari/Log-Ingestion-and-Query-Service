@@ -29,3 +29,9 @@ export class NotFoundError extends HTTPError {
         super(404, message);
     }
 }
+
+export class ServiceUnavailableError extends HTTPError {
+    constructor(message: string) {
+        super(503, message);
+    }
+}
