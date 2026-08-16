@@ -1,6 +1,5 @@
-# Start everything with: docker compose up
-# Start only the test DB: npm run up
-# Stop and delete data: docker compose down -v
+# Start all services with docker compose up
+# Use npm run up for the test database and docker compose down -v to remove data
 services:
     app:
         build: .
@@ -9,13 +8,25 @@ services:
         ports:
             - "8080:8080"
         environment:
-            # Inside the compose network the database is reachable by the
-            # service name "postgres" on its own port 5432, not on 5433
+            # Use the postgres service name and internal port inside the Compose network
             DB_URL: postgres://postgres:liqs@postgres:5432/liqs
+
+            # Keep the Node.js heap below the container memory limit
+            # This allows cleanup before Docker kills the process
+            NODE_OPTIONS: --max-old-space-size=192
         depends_on:
             postgres:
                 # Start the app only after PostgreSQL can accept connections
                 condition: service_healthy
+
+        # Check readiness after migrations complete and the server starts
+        # Allow startup time before counting healthcheck failures
+        healthcheck:
+            test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8080/health"]
+            interval: 5s
+            timeout: 3s
+            retries: 10
+            start_period: 30s
         deploy:
             resources:
                 # Resource limits used during grading
@@ -25,16 +36,75 @@ services:
 
     postgres:
         image: postgres:17
+
+        # Tune PostgreSQL for one CPU and 1 GB of memory
+        command:
+            - postgres
+
+            # Cache table and index pages in PostgreSQL memory
+            - "-c"
+            - "shared_buffers=256MB"
+
+            # Estimate the memory available for filesystem caching
+            # This helps the query planner choose indexes
+            - "-c"
+            - "effective_cache_size=640MB"
+
+            # Set memory for each sorting or grouping operation
+            # This prevents aggregate queries from spilling to disk
+            - "-c"
+            - "work_mem=16MB"
+
+            # Limit connections to control memory use
+            - "-c"
+            - "max_connections=40"
+
+            # Use larger WAL limits and longer checkpoints to reduce write spikes
+            - "-c"
+            - "max_wal_size=4GB"
+            - "-c"
+            - "min_wal_size=1GB"
+            - "-c"
+            - "checkpoint_timeout=15min"
+
+            # Spread checkpoint writes over time to protect ingestion throughput
+            - "-c"
+            - "checkpoint_completion_target=0.9"
+
+            - "-c"
+            - "random_page_cost=1.1"
+
+            # Disable JIT overhead for short queries
+            - "-c"
+            - "jit=off"
+
+            # Run autovacuum frequently to clean dead rows and refresh statistics
+            - "-c"
+            - "autovacuum_naptime=15s"
+            - "-c"
+            - "autovacuum_vacuum_scale_factor=0.02"
+            - "-c"
+            - "autovacuum_analyze_scale_factor=0.01"
+            - "-c"
+            - "autovacuum_vacuum_cost_limit=1000"
+
+            # Track query frequency, duration, and row counts
+            # This helps identify database bottlenecks
+            - "-c"
+            - "shared_preload_libraries=pg_stat_statements"
+
         environment:
             POSTGRES_USER: postgres
             POSTGRES_PASSWORD: liqs
-            # The app uses liqs; the init script creates liqs_test for tests
+            # Use liqs for the app database
+            # The init script creates liqs_test for tests
             POSTGRES_DB: liqs
         ports:
             # Use host port 5433 to avoid a local PostgreSQL instance on 5432
             - "5433:5432"
         volumes:
             - ./initdb:/docker-entrypoint-initdb.d
+            - postgres_data:/var/lib/postgresql/data
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d liqs"]
             interval: 2s
@@ -46,3 +116,7 @@ services:
                 limits:
                     cpus: "1.0"
                     memory: 1G
+
+# The named volume used by the postgres service above
+volumes:
+    postgres_data:
