@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { validateAggregateParameters, validateLogBatch, validateQueryParameters } from "../utils/validate.js";
-import { aggregateLogs, insertLogs, selectLogs } from "../db/queries/logs.js";
+import { aggregateLogs, selectLogs } from "../db/queries/logs.js";
 import { Log } from "../db/schema.js";
 import { encodeCursor } from "../utils/cursor.js";
+import { writeLogs } from "../ingest/writer.js";
 
 export const logsRouter = Router();
 
@@ -10,7 +11,10 @@ logsRouter.post("/", async (req, res) => {
     const { valid, rejected } = validateLogBatch(req.body);
 
     if (valid.length > 0) {
-        await insertLogs(valid);
+        // We did await here because suppose an error did happen in the DB query
+        // Without await, the res would send 200 success than 503 unavailable service
+        // And that doesn't make sense
+        await writeLogs(valid);
     }
 
     res.status(valid.length > 0 ? 200 : 400).json({
