@@ -132,6 +132,39 @@ export const openApiDocument: OpenAPIV3_1.Document = {
                     }
                 }
             },
+            Bucket: {
+                type: "object",
+                additionalProperties: false,
+                required: ["start", "group", "count"],
+                properties: {
+                    start: {
+                        type: "string",
+                        format: "date-time",
+                        description: "Start of the bucket. Buckets are aligned with since, not with the clock."
+                    },
+                    group: {
+                        type: ["string", "null"],
+                        description: "The grouped value, or null when group_by was not given."
+                    },
+                    count: {
+                        type: "integer",
+                        description: "How many logs fell into this bucket."
+                    }
+                }
+            },
+            BucketPage: {
+                type: "object",
+                additionalProperties: false,
+                required: ["buckets"],
+                properties: {
+                    buckets: {
+                        type: "array",
+                        items: {
+                            $ref: "#/components/schemas/Bucket"
+                        }
+                    }
+                }
+            },
             Error: {
                 type: "object",
                 additionalProperties: false,
@@ -360,6 +393,143 @@ export const openApiDocument: OpenAPIV3_1.Document = {
                                 },
                                 example: {
                                     error: "limit must be an integer between 1 and 1000: '5000'"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/logs/aggregate": {
+            get: {
+                operationId: "aggregateLogs",
+                summary: "Count logs in time buckets",
+                description:
+                    "Counts the logs that match the filters and splits them into buckets of equal length. " +
+                    "The filters are the same as on GET /logs, but the range and the bucket size are required. " +
+                    "Buckets start at since, so a range of 14:00 to 15:00 with bucket=1m starts at 14:00 exactly. " +
+                    "Empty buckets are left out and the rows come back oldest first.",
+                tags: ["Logs"],
+                parameters: [
+                    {
+                        name: "since",
+                        in: "query",
+                        required: true,
+                        description: "Inclusive start of the range, and the point the buckets are aligned with.",
+                        schema: {
+                            type: "string",
+                            format: "date-time"
+                        },
+                        example: "2026-07-20T14:00:00Z"
+                    },
+                    {
+                        name: "until",
+                        in: "query",
+                        required: true,
+                        description: "Exclusive end of the range.",
+                        schema: {
+                            type: "string",
+                            format: "date-time"
+                        },
+                        example: "2026-07-20T15:00:00Z"
+                    },
+                    {
+                        name: "bucket",
+                        in: "query",
+                        required: true,
+                        description: "Length of one bucket.",
+                        schema: {
+                            type: "string",
+                            enum: ["1m", "5m", "1h", "1d"]
+                        },
+                        example: "1m"
+                    },
+                    {
+                        name: "group_by",
+                        in: "query",
+                        description: "Split each bucket by this dimension. Left out, every group is null.",
+                        schema: {
+                            type: "string",
+                            enum: ["service", "level"]
+                        }
+                    },
+                    {
+                        name: "service",
+                        in: "query",
+                        description: "Exact service name match.",
+                        schema: {
+                            type: "string"
+                        },
+                        example: "checkout"
+                    },
+                    {
+                        name: "level",
+                        in: "query",
+                        description: "Exact level match.",
+                        schema: {
+                            type: "string",
+                            enum: ["debug", "info", "warn", "error"]
+                        }
+                    },
+                    {
+                        name: "attr.<key>",
+                        in: "query",
+                        description: "Attribute equality, compared as strings, written as attr.user_id=42.",
+                        schema: {
+                            type: "string"
+                        }
+                    },
+                    {
+                        name: "q",
+                        in: "query",
+                        description: "Case-insensitive substring match on the message.",
+                        schema: {
+                            type: "string"
+                        },
+                        example: "declined"
+                    }
+                ],
+                responses: {
+                    "200": {
+                        description: "One row for every bucket and group that holds at least one log.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    $ref: "#/components/schemas/BucketPage"
+                                },
+                                example: {
+                                    buckets: [
+                                        {
+                                            start: "2026-07-20T14:00:00.000Z",
+                                            group: "auth",
+                                            count: 42
+                                        },
+                                        {
+                                            start: "2026-07-20T14:00:00.000Z",
+                                            group: "checkout",
+                                            count: 118
+                                        },
+                                        {
+                                            start: "2026-07-20T14:01:00.000Z",
+                                            group: "checkout",
+                                            count: 97
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        description:
+                            "A parameter was invalid or missing, such as an absent since, until or bucket, " +
+                            "an unsupported bucket size, an unknown group_by, or until earlier than since.",
+                        content: {
+                            "application/json": {
+                                schema: {
+                                    $ref: "#/components/schemas/Error"
+                                },
+                                example: {
+                                    error: "invalid bucket: '30s'"
                                 }
                             }
                         }
