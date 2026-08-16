@@ -31,7 +31,11 @@ export const logs = pgTable(
         attributes: jsonb("attributes").$type<LogAttributes>().default({})
     },
     (table) => [
-        index("logs_timestamp_id_idx").on(table.timestamp, table.id),
-        index("logs_service_timestamp_idx").on(table.service, table.timestamp)
+        index("logs_timestamp_id_service_level_idx").on(table.timestamp, table.id, table.service, table.level),
+        index("logs_service_timestamp_idx").on(table.service, table.timestamp),
+
+        // GIN is built for columns that hold many small values inside one field
+        // "jsonb_path_ops" is a smaller and faster variant of the index
+        index("logs_attributes_gin_idx").using("gin", table.attributes.op("jsonb_path_ops"))
     ]
 );
