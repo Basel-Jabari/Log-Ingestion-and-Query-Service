@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { validateLogBatch, validateQueryParameters } from "../utils/validate.js";
-import { insertLogs, selectLogs } from "../db/queries/logs.js";
+import { validateAggregateParameters, validateLogBatch, validateQueryParameters } from "../utils/validate.js";
+import { aggregateLogs, insertLogs, selectLogs } from "../db/queries/logs.js";
 import { Log } from "../db/schema.js";
 import { encodeCursor } from "../utils/cursor.js";
 
@@ -31,6 +31,15 @@ const toLogResponse = (log: Log) => {
         attributes: log.attributes ?? {}
     };
 };
+
+logsRouter.get("/aggregate", async (req, res) => {
+    const parameters = validateAggregateParameters(req.query);
+    const buckets = await aggregateLogs(parameters);
+
+    res.json({
+        buckets: buckets
+    });
+});
 
 logsRouter.get("/", async (req, res) => {
     const queryParameters = validateQueryParameters(req.query);
