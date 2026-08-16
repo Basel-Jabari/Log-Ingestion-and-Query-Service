@@ -134,7 +134,6 @@ const parseAttr = (query: Record<string, unknown>): AttributeFilters => {
             throw new BadRequestError("invalid attr key: empty key");
         }
 
-        // A repeated filter, like attr.a=1&attr.a=2, arrives as an array
         if (typeof value !== "string") {
             throw new BadRequestError(`invalid attr value for '${attrKey}': ${describeValue(value)}`);
         }
@@ -151,6 +150,66 @@ const parseCursor = (value: unknown): Cursor => {
     }
 
     return decodeCursor(value);
+};
+
+export const BUCKET_SIZES = ["1m", "5m", "1h", "1d"] as const;
+export type BucketSize = (typeof BUCKET_SIZES)[number];
+
+export const GROUP_BY_DIMENSIONS = ["service", "level"] as const;
+export type GroupBy = (typeof GROUP_BY_DIMENSIONS)[number];
+
+const parseBucket = (value: unknown): BucketSize => {
+    if (value === undefined) {
+        throw new BadRequestError("missing bucket");
+    }
+
+    if (typeof value !== "string" || !(BUCKET_SIZES as readonly string[]).includes(value)) {
+        throw new BadRequestError(`invalid bucket: ${describeValue(value)}`);
+    }
+
+    return value as BucketSize;
+};
+
+const parseGroupBy = (value: unknown): GroupBy => {
+    if (typeof value !== "string" || !(GROUP_BY_DIMENSIONS as readonly string[]).includes(value)) {
+        throw new BadRequestError(`invalid group_by: ${describeValue(value)}`);
+    }
+
+    return value as GroupBy;
+};
+
+const parseRange = (parameters: Record<string, unknown>) => {
+    const since = parameters["since"] ? parseTimestamp(parameters["since"], false) : undefined;
+    const until = parameters["until"] ? parseTimestamp(parameters["until"], false) : undefined;
+
+    if (since && until && since.getTime() > until.getTime()) {
+        throw new BadRequestError("invalid time range (since > until)");
+    }
+
+    return { since, until };
+};
+
+const parseRequiredRange = (parameters: Record<string, unknown>) => {
+    const { since, until } = parseRange(parameters);
+
+    if (!since) {
+        throw new BadRequestError("missing since");
+    }
+
+    if (!until) {
+        throw new BadRequestError("missing until");
+    }
+
+    return { since, until };
+};
+
+const parseFilters = (parameters: Record<string, unknown>): LogFilters => {
+    return {
+        service: parameters["service"] ? parseText(parameters["service"], "service") : undefined,
+        level: parameters["level"] ? parseLevel(parameters["level"]) : undefined,
+        attributes: parseAttr(parameters),
+        subMessage: parameters["q"] ? parseText(parameters["q"], "q") : undefined
+    };
 };
 
 export const validateLog = (log: unknown): NewLog => {
@@ -218,45 +277,53 @@ export const validateLogBatch = (body: unknown): ValidatedLogBatch => {
 // An attribute filter is compared as text, so a number in the URL stays a string here
 export type AttributeFilters = Record<string, string>;
 
-export type QueryParameters = {
+// The filters both read endpoints share
+export type LogFilters = {
     service?: string;
     level?: LogLevel;
-    since?: Date;
-    until?: Date;
     attributes: AttributeFilters;
     subMessage?: string;
+};
+
+export type QueryParameters = LogFilters & {
+    since?: Date;
+    until?: Date;
     limit: number;
     cursor?: Cursor;
+};
+
+// The aggregate endpoint needs a range and a bucket, so those are not optional here
+export type AggregateParameters = LogFilters & {
+    since: Date;
+    until: Date;
+    bucket: BucketSize;
+    groupBy?: GroupBy;
 };
 
 const DEFAULT_LIMIT = 100;
 
 export const validateQueryParameters = (query: unknown): QueryParameters => {
     const parameters = isPlainObject(query) ? query : {};
-
-    const service = parameters["service"] ? parseText(parameters["service"], "service") : undefined;
-    const level = parameters["level"] ? parseLevel(parameters["level"]) : undefined;
-    const since = parameters["since"] ? parseTimestamp(parameters["since"], false) : undefined;
-    const until = parameters["until"] ? parseTimestamp(parameters["until"], false) : undefined;
-    const attributes = parseAttr(parameters);
-    const subMessage = parameters["q"] ? parseText(parameters["q"], "q") : undefined;
-    const limit = parameters["limit"] ? parseLimit(parameters["limit"]) : DEFAULT_LIMIT;
-    const cursor = parameters["cursor"] ? parseCursor(parameters["cursor"]) : undefined;
-
-    if (since && until) {
-        if (since.getTime() > until.getTime()) {
-            throw new BadRequestError("invalid time range (since > until)");
-        }
-    }
+    const { since, until } = parseRange(parameters);
 
     return {
-        service: service,
-        level: level,
+        ...parseFilters(parameters),
         since: since,
         until: until,
-        attributes: attributes,
-        subMessage: subMessage,
-        limit: limit,
-        cursor: cursor
+        limit: parameters["limit"] ? parseLimit(parameters["limit"]) : DEFAULT_LIMIT,
+        cursor: parameters["cursor"] ? parseCursor(parameters["cursor"]) : undefined
+    };
+};
+
+export const validateAggregateParameters = (query: unknown): AggregateParameters => {
+    const parameters = isPlainObject(query) ? query : {};
+    const { since, until } = parseRequiredRange(parameters);
+
+    return {
+        ...parseFilters(parameters),
+        since: since,
+        until: until,
+        bucket: parseBucket(parameters["bucket"]),
+        groupBy: parameters["group_by"] ? parseGroupBy(parameters["group_by"]) : undefined
     };
 };
