@@ -1,17 +1,69 @@
-import { and, asc, desc, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, lt, or, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { AggregateParameters, BucketSize, GroupBy, LogFilters, QueryParameters } from "../../utils/validate.js";
-import { db } from "../db.js";
+import { db, pgClient } from "../db.js";
 import { logs, NewLog } from "../schema.js";
 
-export const insertLogs = async (Logs: NewLog[]) => {
-    await db.insert(logs).values(Logs);
+// Everything is sent as text[] and cast inside SQL
+export const insertLogs = async (rows: NewLog[]) => {
+    const timestamps: string[] = [];
+    const levels: string[] = [];
+    const services: string[] = [];
+    const messages: string[] = [];
+    const attributes: string[] = [];
+
+    for (const row of rows) {
+        timestamps.push(row.timestamp.toISOString());
+        levels.push(row.level);
+        services.push(row.service);
+        messages.push(row.message);
+        attributes.push(JSON.stringify(row.attributes ?? {}));
+    }
+
+    await pgClient`
+        INSERT INTO logs (timestamp, level, service, message, attributes)
+        SELECT timestamp::timestamptz, level::log_level, service, message, attributes::jsonb
+        FROM unnest(
+            ${timestamps}::text[],
+            ${levels}::text[],
+            ${services}::text[],
+            ${messages}::text[],
+            ${attributes}::text[]
+        ) AS batch(timestamp, level, service, message, attributes)
+    `;
 };
 
 // % and _ are wildcards for ILIKE
 // Without escaping them, a search for "50%" would match almost every message
 const escapeLikePattern = (value: string) => {
     return value.replace(/[\\%_]/g, "\\$&");
+};
+
+// A small JSON document with one pair, for example {"user_id":"42"}
+// The @> operator asks PostgreSQL: does the stored JSON contain this pair?
+const attributeContains = (key: string, value: string | number | boolean) => {
+    return sql`${logs.attributes} @> ${JSON.stringify({ [key]: value })}::jsonb`;
+};
+
+// "42" and "-3.5" are numbers, "42abc" and "" are not
+const NUMBER_VALUE = /^-?\d+(\.\d+)?$/;
+
+// For a value that looks like a number or like a boolean we ask two questions joined by OR
+// for example {"retries":"3"} OR {"retries":3}
+// Both questions use the index
+// And together they give the same answers
+const attributeCondition = (key: string, value: string) => {
+    const probes = [attributeContains(key, value)];
+
+    if (NUMBER_VALUE.test(value)) {
+        probes.push(attributeContains(key, Number(value)));
+    }
+
+    if (value === "true" || value === "false") {
+        probes.push(attributeContains(key, value === "true"));
+    }
+
+    return probes.length === 1 ? probes[0] : or(...probes);
 };
 
 const filterConditions = (filters: LogFilters) => {
@@ -23,9 +75,8 @@ const filterConditions = (filters: LogFilters) => {
         filters.subMessage ? ilike(logs.message, `%${escapeLikePattern(filters.subMessage)}%`) : undefined
     ];
 
-    // ->> reads the value as text, which is how the contract compares attributes
     for (const [key, value] of Object.entries(filters.attributes)) {
-        conditions.push(sql`${logs.attributes} ->> ${key}::text = ${value}`);
+        conditions.push(attributeCondition(key, value));
     }
 
     return conditions;
