@@ -19,5 +19,9 @@ export const middlewareErrorHandler: ErrorMiddleWare = (err, _req, res, _next) =
         status = errWithStatus.status;
     }
 
+    if (status === 503) {
+        res.setHeader("Retry-After", "1");
+    }
+
     res.status(status).json(errorJSON);
 };
