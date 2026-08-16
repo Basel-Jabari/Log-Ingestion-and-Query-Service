@@ -12,6 +12,10 @@ import { middlewareErrorHandler } from "./middlewares/error_handler.js";
 
 export const app = express();
 
+// Disable unnecessary response headers
+app.set("etag", false);
+app.disable("x-powered-by");
+
 // Express defaults JSON request bodies to 100 KB
 // Log batches may exceed that, so use the configured higher limit
 app.use(
@@ -19,6 +23,8 @@ app.use(
         limit: config.server.bodyLimit
     })
 );
+
+app.use(endpoints);
 
 const swaggerPaths = ["/docs", "/swagger"];
 
@@ -36,5 +42,4 @@ app.use(swaggerPaths, (req, res, next) => {
     next();
 });
 app.use(swaggerPaths, swaggerUi.serve, swaggerUi.setup(openApiDocument));
-app.use(endpoints);
 app.use(middlewareErrorHandler);
