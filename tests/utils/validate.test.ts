@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { BadRequestError } from "../../src/errors.js";
 import { encodeCursor } from "../../src/utils/cursor.js";
-import { validateLog, validateLogBatch, validateQueryParameters } from "../../src/utils/validate.js";
+import {
+    validateAggregateParameters,
+    validateLog,
+    validateLogBatch,
+    validateQueryParameters
+} from "../../src/utils/validate.js";
 
 const validEntry = () => ({
     timestamp: "2006-03-29T14:32:01.123Z",
@@ -296,5 +301,117 @@ describe("validateQueryParameters", () => {
 
     it("Rejects an empty q", () => {
         expect(() => validateQueryParameters({ q: "   " })).toThrow("invalid q: '   '");
+    });
+});
+
+describe("validateAggregateParameters", () => {
+    // The three parameters the endpoint cannot work without
+    const required = {
+        since: "2026-07-20T14:00:00Z",
+        until: "2026-07-20T15:00:00Z",
+        bucket: "1m"
+    };
+
+    it("Parses the required parameters and leaves the rest empty", () => {
+        expect(validateAggregateParameters(required)).toEqual({
+            service: undefined,
+            level: undefined,
+            since: new Date("2026-07-20T14:00:00Z"),
+            until: new Date("2026-07-20T15:00:00Z"),
+            attributes: {},
+            subMessage: undefined,
+            bucket: "1m",
+            groupBy: undefined
+        });
+    });
+
+    it("Parses the same filters as the query endpoint", () => {
+        expect(
+            validateAggregateParameters({
+                ...required,
+                service: "checkout",
+                level: "error",
+                "attr.user_id": "42",
+                q: "declined",
+                group_by: "service"
+            })
+        ).toEqual({
+            service: "checkout",
+            level: "error",
+            since: new Date("2026-07-20T14:00:00Z"),
+            until: new Date("2026-07-20T15:00:00Z"),
+            attributes: {
+                user_id: "42"
+            },
+            subMessage: "declined",
+            bucket: "1m",
+            groupBy: "service"
+        });
+    });
+
+    it("Accepts every bucket size and both groupings", () => {
+        for (const bucket of ["1m", "5m", "1h", "1d"]) {
+            expect(validateAggregateParameters({ ...required, bucket: bucket }).bucket).toBe(bucket);
+        }
+
+        for (const dimension of ["service", "level"]) {
+            expect(validateAggregateParameters({ ...required, group_by: dimension }).groupBy).toBe(dimension);
+        }
+    });
+
+    it("Accepts a range that holds no time at all", () => {
+        expect(
+            validateAggregateParameters({
+                ...required,
+                until: required.since
+            }).until
+        ).toEqual(new Date(required.since));
+    });
+
+    it("Rejects a missing since, until or bucket", () => {
+        expect(() => validateAggregateParameters({ until: required.until, bucket: "1m" })).toThrow("missing since");
+        expect(() => validateAggregateParameters({ since: required.since, bucket: "1m" })).toThrow("missing until");
+        expect(() => validateAggregateParameters({ since: required.since, until: required.until })).toThrow(
+            "missing bucket"
+        );
+        expect(() => validateAggregateParameters({})).toThrow(BadRequestError);
+    });
+
+    it("Rejects a bucket size outside the four the contract allows", () => {
+        expect(() => validateAggregateParameters({ ...required, bucket: "30s" })).toThrow("invalid bucket: '30s'");
+        expect(() => validateAggregateParameters({ ...required, bucket: "1 minute" })).toThrow(
+            "invalid bucket: '1 minute'"
+        );
+
+        // A bucket name is never allowed to reach SQL as written
+        expect(() => validateAggregateParameters({ ...required, bucket: "1m'; drop table logs; --" })).toThrow(
+            BadRequestError
+        );
+    });
+
+    it("Rejects a group_by that is not service or level", () => {
+        expect(() => validateAggregateParameters({ ...required, group_by: "message" })).toThrow(
+            "invalid group_by: 'message'"
+        );
+        expect(() => validateAggregateParameters({ ...required, group_by: ["service", "level"] })).toThrow(
+            "invalid group_by: array"
+        );
+    });
+
+    it("Rejects until earlier than since", () => {
+        expect(() =>
+            validateAggregateParameters({
+                ...required,
+                since: "2026-07-20T15:00:00Z",
+                until: "2026-07-20T14:00:00Z"
+            })
+        ).toThrow("invalid time range (since > until)");
+    });
+
+    it("Rejects a malformed timestamp and an unsupported level", () => {
+        expect(() => validateAggregateParameters({ ...required, since: "yesterday" })).toThrow(BadRequestError);
+        expect(() => validateAggregateParameters({ ...required, level: "critical" })).toThrow(
+            "invalid level: 'critical'"
+        );
     });
 });
