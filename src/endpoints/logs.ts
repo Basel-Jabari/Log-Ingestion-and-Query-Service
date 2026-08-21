@@ -36,15 +36,6 @@ const toLogResponse = (log: Log) => {
     };
 };
 
-logsRouter.get("/aggregate", async (req, res) => {
-    const parameters = validateAggregateParameters(req.query);
-    const buckets = await aggregateLogs(parameters);
-
-    res.json({
-        buckets: buckets
-    });
-});
-
 logsRouter.get("/", async (req, res) => {
     const queryParameters = validateQueryParameters(req.query);
 
@@ -58,5 +49,22 @@ logsRouter.get("/", async (req, res) => {
         logs: page.map(toLogResponse),
         // The next page continues after the last row we return
         next_cursor: hasMore ? encodeCursor(page[page.length - 1]) : null
+    });
+});
+
+const toAggregateBucketResponse = (bucket: { start: Date; group: string | null; count: number }) => {
+    return {
+        start: bucket.start.toISOString().replace(".000Z", "Z"),
+        group: bucket.group,
+        count: bucket.count
+    };
+};
+
+logsRouter.get("/aggregate", async (req, res) => {
+    const parameters = validateAggregateParameters(req.query);
+    const buckets = await aggregateLogs(parameters);
+
+    res.json({
+        buckets: buckets.map(toAggregateBucketResponse)
     });
 });

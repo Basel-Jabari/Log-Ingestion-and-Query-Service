@@ -23,7 +23,7 @@
         "prepare": "husky",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
-        "up": "docker compose up -d --wait postgres",
+        "up": "docker compose up -d --build --wait",
         "test": "cross-env DB_URL=postgres://postgres:liqs@127.0.0.1:5433/liqs_test vitest run"
     },
     "lint-staged": {

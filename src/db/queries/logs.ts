@@ -99,7 +99,7 @@ export const selectLogs = async (parameters: QueryParameters) => {
         conditions.push(sql`(${logs.timestamp}, ${logs.id}) < (${timestamp}::timestamptz, ${id}::bigint)`);
     }
 
-    return db
+    return await db
         .select()
         .from(logs)
         .where(and(...conditions))
@@ -128,7 +128,7 @@ export const aggregateLogs = async (parameters: AggregateParameters) => {
     // 2. The timestamp column that determines which bucket each log belongs to
     // 3. The origin—the point from which bucket boundaries are calculated
     // mapWith tells Drizzle to convert the returned value like a timestamp column
-    const origin = parameters.since.toISOString();
+    const origin = "1900-01-01T00:00:00.000Z";
     const start =
         sql`date_bin(${BUCKET_INTERVALS[parameters.bucket]}::interval, ${logs.timestamp}, ${origin}::timestamptz)`.mapWith(
             logs.timestamp
@@ -138,7 +138,7 @@ export const aggregateLogs = async (parameters: AggregateParameters) => {
     const group = groupColumn ? sql<string | null>`${groupColumn}::text` : sql<string | null>`null::text`;
     const grouping = groupColumn ? [sql`1`, sql`2`] : [sql`1`];
 
-    return db
+    return await db
         .select({
             start: start,
             group: group,

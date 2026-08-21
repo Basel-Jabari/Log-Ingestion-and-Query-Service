@@ -2,3 +2,7 @@ node_modules/
 dist/
 .vscode/
 .env
+%UserProfile%.wslconfig
+benchmark-report.json
+helper.txt
+loadtest/
